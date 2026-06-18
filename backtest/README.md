@@ -1,65 +1,77 @@
-# SPY Intraday Backtest — ORB vs. VWAP Reversion
+# SPY Intraday Backtest — ORB vs. VWAP Reversion vs. EMA Trend
 
-A small, honest backtest comparing two commonly-cited day-trading methods on
-SPY. **Educational only — not financial advice.**
+An honest backtest comparing three commonly-cited day-trading methods on SPY,
+across two bar granularities. **Educational only — not financial advice.**
 
 ## What it tests
 
-| Strategy | Logic |
-|----------|-------|
-| **Opening Range Breakout (ORB)** | The first 30-min bar (9:30–10:00 ET) sets the range. Take the first break of that range — long above the high, short below the low. Stop = opposite side of the range. Exit at the session close if not stopped. One trade/day. |
-| **VWAP Reversion** | Build an intraday cumulative VWAP with an expanding ±σ band. Fade extensions: long when price is 1.5σ *below* VWAP, short when 1.5σ *above*. Exit on reversion to VWAP, a 3σ stop, or the close. |
+| Strategy | Type | Logic |
+|----------|------|-------|
+| **Opening Range Breakout (ORB)** | Breakout | First 30 min sets the range. Take the first break — long above the high, short below the low. Stop = opposite side. Exit at the close. One trade/day. |
+| **VWAP Reversion** | Mean reversion | Intraday cumulative VWAP with an expanding ±σ band. Fade extensions: long 1.5σ below VWAP, short 1.5σ above. Exit on reversion to VWAP, a 3σ stop, or the close. |
+| **EMA Trend (9/21)** | Momentum / trend | Always-in fast/slow EMA crossover, computed per session. Long when fast EMA > slow, short when below, flip on the cross. Flat at the close. |
 
-Both are **intraday only — flat overnight.** A 4 bps round-trip cost
-(slippage) is charged on every trade. Each trade is sized at full equity, so
-"total return" is compounded.
+All strategies are **intraday only — flat overnight**, with a **4 bps
+round-trip slippage cost** on every trade. Each trade is sized at full equity,
+so "total return" is compounded.
 
 ## Data
 
-- `data/spy_30min.json` — 30-minute SPY bars (regular hours), pulled from the
-  broker market-data feed.
-- The feed carries real intraday volume back to **2026-01-30**, giving
-  **96 trading sessions** (1,248 bars) through 2026-06-17. Earlier bars are
-  gap-fill placeholders (volume 0) and are dropped automatically.
+- `data/spy_30min.json` — 30-min bars, real volume from 2026-01-30 → 06-17 (**96 sessions**).
+- `data/spy_5min.json` — 5-min bars, real volume from 2026-02-23 → 06-17 (**81 sessions**).
+- Both pulled from the broker market-data feed. Gap-fill bars (volume 0) are
+  dropped automatically. The EMA trend strategy needs many bars per session, so
+  it only runs on the 5-min file.
 
-## Results (Jan 30 – Jun 17, 2026)
+## Results
 
-| Metric | ORB | VWAP Reversion |
-|---|---|---|
-| Trades | 96 | 182 |
-| Win rate | 49.0% | 39.6% |
-| Avg trade | +0.02% | −0.06% |
-| Profit factor | 1.08 | 0.59 |
-| **Total return (compounded)** | **+1.33%** | **−10.53%** |
-| Max drawdown | −4.35% | −11.21% |
-| **Buy & hold benchmark** | **+7.15%** | **+7.15%** |
+### 30-minute bars (Jan 30 – Jun 17, 96 sessions) — buy & hold **+7.15%**
 
-![equity curve](results/equity_curve.png)
+| Strategy | Trades | Win % | Profit factor | Total return | Max DD |
+|---|---|---|---|---|---|
+| Opening Range Breakout | 96 | 49.0% | 1.08 | **+1.33%** | −4.35% |
+| VWAP Reversion | 182 | 39.6% | 0.59 | **−10.53%** | −11.21% |
+
+### 5-minute bars (Feb 23 – Jun 17, 81 sessions) — buy & hold **+7.77%**
+
+| Strategy | Trades | Win % | Profit factor | Total return | Max DD |
+|---|---|---|---|---|---|
+| Opening Range Breakout | 81 | 45.7% | 0.87 | **−2.33%** | −5.24% |
+| VWAP Reversion | 525 | 31.0% | 0.49 | **−23.00%** | −23.48% |
+| EMA Trend (9/21) | 268 | 31.3% | 0.71 | **−9.18%** | −10.95% |
+
+![equity curve, 5-min](results/equity_curve_5min.png)
 
 ## Takeaways
 
-- **Neither method beat buy & hold.** SPY simply holding returned +7.15% over
-  the window; ORB returned +1.33% while taking on a 4%+ drawdown, and the naive
-  VWAP-fade *lost* 10.5%.
-- **ORB was roughly break-even** after costs (profit factor 1.08, ~49% win
-  rate). Its edge is thin and fragile on 30-min bars — the kind of thing that
-  evaporates with slightly worse fills.
-- **Mean-reversion fought the tape and lost.** Fading every stretch from VWAP
-  in a market that trended *up* for months means repeatedly shorting strength
-  and getting run over. Mean reversion needs range-bound conditions; this
-  period wasn't one.
-- This is exactly the earlier point: there's **no "proven to make money"
-  setup.** Edges are regime-dependent, thin, and easily eaten by costs.
+- **Finer bars killed the ORB "edge."** On 30-min bars ORB looked marginally
+  positive (+1.33%); on realistic 5-min bars it went **negative (−2.33%)**. The
+  coarse-bar profit was partly an artifact of optimistic fills and not modeling
+  intrabar stop/target sequencing. This is the classic way a backtest lies to
+  you — **the edge was in the resolution, not the market.**
+- **More trading = more bleeding.** VWAP reversion fired 182 trades on 30-min
+  and **525** on 5-min, and the finer version lost more than twice as much
+  (−23%). Costs + fading a trending tape compound against you.
+- **The momentum version lost too (−9.18%).** Intraday EMA crossovers get
+  whipsawed in chop, and because the strategy is flat overnight it **misses
+  SPY's overnight drift** — which is where much of the +7.77% buy-&-hold return
+  actually accrued. Trend-following's whole premise needs sustained moves; a
+  single ticker intraday rarely supplies them.
+- **None of the three beat simply holding SPY.** All three *lost money* on the
+  honest 5-min test while buy & hold made ~+7.8%.
 
-## Caveats (read these)
+The bottom line from earlier holds, now measured twice: **there is no "proven
+to make money" intraday setup.** Edges are thin, regime-dependent, costed away,
+and fragile to backtest assumptions.
 
-- **Coarse bars.** 30-min granularity misses intrabar sequencing (e.g., whether
-  the stop or target hit first). Finer data (1–5 min) would change the numbers.
-- **Small sample, one regime.** ~4.5 months of a generally rising market. One
-  trending regime tells you little about how these behave in chop or selloffs.
-- **Optimistic fills.** Breakouts are assumed to fill at the exact range level.
-- **No parameter search** — and you shouldn't naively run one, or you'll just
-  overfit. These are single illustrative configs.
+## Caveats
+
+- **Small sample, one regime** (~3–5 months of a generally rising market).
+- **Fills are optimistic** (breakouts assumed to fill at the exact level).
+- **Single configs, no parameter search** — and you should resist running one,
+  or you'll overfit a curve to this specific window.
+- 5-min still doesn't capture tick-level sequencing; it's closer to reality
+  than 30-min, not reality itself.
 
 ## Run it
 
@@ -68,5 +80,5 @@ pip install pandas numpy matplotlib
 python3 backtest/backtest.py
 ```
 
-Outputs land in `results/`: `summary.csv`, `trades_orb.csv`,
-`trades_vwap.csv`, and `equity_curve.png`.
+Outputs in `results/`: `summary.csv`, per-strategy/per-dataset trade CSVs, and
+`equity_curve_5min.png`.
